@@ -36,14 +36,16 @@ wall = new GameObject({
 //////////////////////////////////////////
 
 // === ENEMY AI SETTINGS ===
-enemy.startX = enemy.x;           // Remember where guard started
+enemy.startX = enemy.x;
 enemy.startY = enemy.y;
 enemy.lastKnownX = enemy.x;
 enemy.lastKnownY = enemy.y;
 enemy.speed = 2.5;
-enemy.state = "patrol";           // patrol, alert, return
+enemy.state = "patrol";
 enemy.alertTimer = 0;
-enemy.pauseTime = 60;             // frames to pause at last known position
+enemy.pauseTime = 200;               // frames to pause at last known spot
+enemy.reactionTime = 90;            // ≈ 0.75 seconds at 60fps
+enemy.reactionTimer = 0;
 
 //////////////
 
@@ -114,30 +116,32 @@ function animate() {
 // ====================== VISION SYSTEM ======================
 
 function checkVision() {
+    var wasSeeing = enemy.isSeeingPlayer;   // Remember previous state
+    
     enemy.isSeeingPlayer = false;
 
-   // Step 1: Calculate the difference between enemy and player
-    var dx = player.x - enemy.x; // How far player is from enemy on X axis
-    var dy = player.y - enemy.y; // How far player is from enemy on Y axis
-
-    // Step 2: Calculate the straight-line distance using Pythagorean math
+    var dx = player.x - enemy.x;
+    var dy = player.y - enemy.y;
     var distance = Math.sqrt(dx*dx + dy*dy);
-    // This is the actual distance in pixels between the two objects.
-    // Math.sqrt(dx*dx + dy*dy) is the distance formula
 
-    // Stop if player is too far away to matter
-    if (distance > enemy.visionLength) return;
-
-    // Check if wall blocks the line of sight
-    if (lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall)) {
-        return; // wall is in the way
+    if (distance > enemy.visionLength) {
+        enemy.reactionTimer = 0;   // reset timer when out of sight
+        return;
     }
 
-    // No wall in between → guard sees player!
+    if (lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall)) {
+        enemy.reactionTimer = 0;
+        return;
+    }
+
     enemy.isSeeingPlayer = true;
-    // Remember where player was seen
-    enemy.lastKnownX = player.x;
-    enemy.lastKnownY = player.y;
+    
+    //  Reaction Delay ===
+    if (!wasSeeing) {
+        enemy.reactionTimer = 0;           // Start counting when player FIRST enters vision
+    }
+    
+    enemy.reactionTimer++;
 }
 
 function drawVisionLine() {
@@ -191,33 +195,36 @@ function lineIntersectsLine(x1,y1,x2,y2, x3,y3,x4,y4) {
 ///-----------------ENEMY AI STUFF
 
 function updateEnemy() {
-    if (enemy.isSeeingPlayer) {
+    // Only go into alert AFTER reaction delay
+    if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
         enemy.state = "alert";
-        enemy.alertTimer = 0;
-    } else if (enemy.state === "alert") {
+        enemy.lastKnownX = player.x;
+        enemy.lastKnownY = player.y;
+    } 
+    else if (!enemy.isSeeingPlayer && enemy.state === "alert") {
+        // Player disappeared → start pause timer
         enemy.alertTimer++;
         if (enemy.alertTimer > enemy.pauseTime) {
             enemy.state = "return";
+            enemy.alertTimer = 0;
         }
     }
 
-    // Move enemy based on state
+    // === Movement based on state ===
     if (enemy.state === "alert") {
         moveToward(enemy, enemy.lastKnownX, enemy.lastKnownY, enemy.speed);
     } 
     else if (enemy.state === "return") {
         moveToward(enemy, enemy.startX, enemy.startY, enemy.speed * 0.8);
         
-        // If close enough to start position, go back to patrol
         var dx = enemy.startX - enemy.x;
         var dy = enemy.startY - enemy.y;
-        if (Math.sqrt(dx*dx + dy*dy) < 10) {
+        if (Math.sqrt(dx*dx + dy*dy) < 12) {
             enemy.state = "patrol";
             enemy.x = enemy.startX;
             enemy.y = enemy.startY;
         }
     }
-    // "patrol" state does nothing for now (guard stays still)
 }
 
 // Simple movement helper
