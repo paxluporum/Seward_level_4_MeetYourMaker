@@ -6,6 +6,8 @@ var player;
 var enemy;
 
 var wall;
+var traps = [];
+var explosions = [];
 
 canvas = document.getElementById("canvas");
 context = canvas.getContext("2d");
@@ -46,6 +48,8 @@ enemy.alertTimer = 0;
 enemy.pauseTime = 200;               // frames to pause at last known spot
 enemy.reactionTime = 90;            // ≈ 0.75 seconds at 60fps
 enemy.reactionTimer = 0;
+enemy.isStuck = false;
+enemy.stuckTimer = 0;
 
 //////////////
 
@@ -74,6 +78,7 @@ function animate() {
     if (d) player.vx += player.ax * player.force;
     player.vx *= fX;
     player.vy *= fY;
+
     // ---------------------
 
 
@@ -100,6 +105,23 @@ function animate() {
     }
 
     //----------------------------------------------------------
+
+    //----Drop Traps----
+
+    if (spacebar) {
+        dropTrap();
+        spacebar = false;        // So you drop only ONE trap per key press
+    }
+
+// === UPDATE TRAPS & ENEMY INTERACTION ===
+    updateTraps();
+
+    // === DRAW TRAPS ===
+    drawTraps();
+    //======
+    drawExplosions();
+
+//===============
 
     //VISION CHECK
     checkVision();
@@ -195,6 +217,20 @@ function lineIntersectsLine(x1,y1,x2,y2, x3,y3,x4,y4) {
 ///-----------------ENEMY AI STUFF
 
 function updateEnemy() {
+
+    if(enemy.isStuck) {
+        enemy.stuckTimer--;
+        if(enemy.stuckTimer <= 0) {
+            enemy.isStuck = false;
+        }
+
+        //flash red while stuck
+        enemy.color = (Math.floor(Date.now() / 150) % 2 === 0) ? "#ff0000" : "#ff8800";
+        return;
+    } else {
+        enemy.color = "#ff4444";   // normal color
+    }
+      
     // Only go into alert AFTER reaction delay
     if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
         enemy.state = "alert";
@@ -236,5 +272,117 @@ function moveToward(obj, targetX, targetY, speed) {
     if (dist > 5) {
         obj.x += (dx / dist) * speed;
         obj.y += (dy / dist) * speed;
+    }
+}
+
+
+// ====================== TRAP SYSTEM ======================
+
+function dropTrap() {
+    if (traps.length >= 3) {
+        // Remove oldest trap
+        traps.shift();
+    }
+    
+    var newTrap = {
+        x: player.x,
+        y: player.y,
+        size: 28,
+        active: true
+    };
+    traps.push(newTrap);
+}
+
+function updateTraps() {
+    for (var i = traps.length - 1; i >= 0; i--) {
+        var trap = traps[i];
+        if (!trap.active) continue;
+
+        // Trap catches enemy
+        var tdx = enemy.x - trap.x;
+        var tdy = enemy.y - trap.y;
+        var trapDistance = Math.sqrt(tdx*tdx + tdy*tdy);
+
+        if (!enemy.isStuck && trapDistance < 35) {
+            enemy.isStuck = true;
+            enemy.stuckTimer = 180;
+            trap.active = false;
+            console.log("Enemy caught in trap!");
+        }
+    }
+
+    // === PAC-MAN STYLE KILL===
+    if (enemy.isStuck) {
+        var pdx = player.x - enemy.x;
+        var pdy = player.y - enemy.y;
+        var killDistance = Math.sqrt(pdx*pdx + pdy*pdy);
+
+        if (killDistance < 45) {          // big hitbox while stuck
+            console.log("Enemy eliminated!");
+            createExplosion(enemy.x, enemy.y);
+            
+            // Remove enemy
+            enemy.x = -9999;
+            enemy.isStuck = false;
+            enemy.color = "#ff4444";
+        }
+    }
+}
+function drawTraps() {
+    for (var i = 0; i < traps.length; i++) {
+        var t = traps[i];
+        if (!t.active) continue;
+
+        context.save();
+        context.translate(t.x, t.y);
+        
+        // Draw a simple star shape
+        context.fillStyle = "#ff00ff";      
+        context.strokeStyle = "#ffff00";
+        context.lineWidth = 3;
+        
+        context.beginPath();
+        for (let a = 0; a < 10; a++) {     // 5-point star
+            let ang = a * Math.PI / 5 - Math.PI / 2;
+            let r = (a % 2 === 0) ? t.size : t.size / 2;
+            context.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+        }
+        context.closePath();
+        context.fill();
+        context.stroke();
+        
+        context.restore();
+    }
+}
+
+// ====explosions!
+
+
+function createExplosion(x, y) {
+    explosions.push({
+        x: x,
+        y: y,
+        life: 30
+    });
+}
+
+function drawExplosions() {
+    for (var i = explosions.length - 1; i >= 0; i--) {
+        var e = explosions[i];
+        e.life--;
+        
+        if (e.life <= 0) {
+            explosions.splice(i, 1);
+            continue;
+        }
+        
+        var alpha = e.life / 30;
+        context.save();
+        context.globalAlpha = alpha;
+        context.fillStyle = "#ffff00";
+        context.beginPath();
+        context.arc(e.x, e.y, 25 * (e.life/30), 0, Math.PI*2);
+        context.fill();
+        context.restore();
     }
 }
