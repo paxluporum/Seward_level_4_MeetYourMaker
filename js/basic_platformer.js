@@ -3,11 +3,14 @@ var context;
 var timer;
 var interval;
 var player;
+var gameOver = false;
+
 var enemy;
 
 var wall;
 var traps = [];
 var explosions = [];
+var bullets = [];
 
 canvas = document.getElementById("canvas");
 context = canvas.getContext("2d");
@@ -17,8 +20,13 @@ player = new GameObject({
     y: 400,
     width: 40,
     height: 40,
-    color: "#00ff88"
+    color: "#00ff88",
 });
+
+///Player lives======
+player.lives = 3;
+player.startX = player.x;
+player.startY = player.y;
 
 enemy = new GameObject({
     x: 700,
@@ -71,6 +79,11 @@ function animate() {
 
     context.clearRect(0, 0, canvas.width, canvas.height);
 
+    if (gameOver) {
+        drawGameOver();
+        return;
+    }
+
     // --- MOVEMENT ---
     if (w) player.vy -= player.ay * player.force;
     if (s) player.vy += player.ay * player.force;
@@ -113,64 +126,79 @@ function animate() {
         spacebar = false;        // So you drop only ONE trap per key press
     }
 
-// === UPDATE TRAPS & ENEMY INTERACTION ===
-    updateTraps();
-
-    // === DRAW TRAPS ===
-    drawTraps();
-    //======
-    drawExplosions();
-
-//===============
-
-    //VISION CHECK
+    // 4. Vision (must come after player movement)
     checkVision();
-    drawVisionLine();
-    //Enemy AI
+
+    // 5. Enemy AI + systems
     updateEnemy();
+    updateTraps();
+    updateBullets();
 
-
+    // 6. DRAW (only once each)
+    wall.drawRect();
+    drawTraps();
+    drawExplosions();
     player.drawRect();
     enemy.drawRect();
-    wall.drawRect();
+    drawVisionLine();
+    drawBullets();
+    drawLives();
 }
 
 // ====================== VISION SYSTEM ======================
 
 function checkVision() {
-    var wasSeeing = enemy.isSeeingPlayer;   // Remember previous state
-    
     enemy.isSeeingPlayer = false;
 
     var dx = player.x - enemy.x;
     var dy = player.y - enemy.y;
-    var distance = Math.sqrt(dx*dx + dy*dy);
+    var distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance > enemy.visionLength) {
-        enemy.reactionTimer = 0;   // reset timer when out of sight
-        return;
-    }
-
-    if (lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall)) {
         enemy.reactionTimer = 0;
         return;
     }
 
-    enemy.isSeeingPlayer = true;
-    
-    //  Reaction Delay ===
-    if (!wasSeeing) {
-        enemy.reactionTimer = 0;           // Start counting when player FIRST enters vision
-    }
-    
-    enemy.reactionTimer++;
-}
+    // Wall blocking check with small buffer
+    var wallBlocking = lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall);
 
+    if (wallBlocking) {
+        // 
+        // For this vertical wall, we check X position
+        var enemySide;
+        if (enemy.x < wall.x) {
+            enemySide = "left";
+        } else {
+            enemySide = "right";
+        }
+        var playerSide;
+        if (player.x < wall.x) {
+            playerSide = "left"
+        } else {
+            playerSide = "right"
+        }
+
+        if (enemySide !== playerSide) {
+            console.log("WALL BLOCKING - Player behind wall");
+            enemy.reactionTimer = 0;
+            return;
+        }
+    }
+
+    // Clear line of sight
+    enemy.isSeeingPlayer = true;
+
+    if (enemy.reactionTimer < 1) {
+        enemy.reactionTimer = 1;
+    } else {
+        enemy.reactionTimer++;
+    }
+}
 function drawVisionLine() {
     // Draw the vision ray toward the player (for testing)
     var dx = player.x - enemy.x;
     var dy = player.y - enemy.y;
-    var distance = Math.sqrt(dx*dx + dy*dy);
+    var distance = Math.sqrt(dx * dx + dy * dy);
 
     if (distance > enemy.visionLength) return;
 
@@ -192,17 +220,17 @@ function drawVisionLine() {
 function lineIntersectsRect(x1, y1, x2, y2, rect) {
     // Check if line crosses any of the 4 sides of the rectangle
     return (
-        lineIntersectsLine(x1,y1,x2,y2, rect.left().x, rect.top().y, rect.right().x, rect.top().y) ||
-        lineIntersectsLine(x1,y1,x2,y2, rect.right().x, rect.top().y, rect.right().x, rect.bottom().y) ||
-        lineIntersectsLine(x1,y1,x2,y2, rect.right().x, rect.bottom().y, rect.left().x, rect.bottom().y) ||
-        lineIntersectsLine(x1,y1,x2,y2, rect.left().x, rect.bottom().y, rect.left().x, rect.top().y)
+        lineIntersectsLine(x1, y1, x2, y2, rect.left().x, rect.top().y, rect.right().x, rect.top().y) ||
+        lineIntersectsLine(x1, y1, x2, y2, rect.right().x, rect.top().y, rect.right().x, rect.bottom().y) ||
+        lineIntersectsLine(x1, y1, x2, y2, rect.right().x, rect.bottom().y, rect.left().x, rect.bottom().y) ||
+        lineIntersectsLine(x1, y1, x2, y2, rect.left().x, rect.bottom().y, rect.left().x, rect.top().y)
     );
 }
 
 // Does oes one line segment intersect another?
 // Line 1: from (x1,y1) to (x2,y2)----enemy to player
 // Line 2: from (x3,y3) to (x4,y4)---- one side of the wall
-function lineIntersectsLine(x1,y1,x2,y2, x3,y3,x4,y4) {
+function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
     var den = (x4 - x3) * (y2 - y1) - (x2 - x1) * (y4 - y3);
     if (Math.abs(den) < 0.0001) return false; // parallel
 
@@ -217,28 +245,42 @@ function lineIntersectsLine(x1,y1,x2,y2, x3,y3,x4,y4) {
 ///-----------------ENEMY AI STUFF
 
 function updateEnemy() {
-
-    if(enemy.isStuck) {
+    // ==================== STUCK LOGIC ====================
+    if (enemy.isStuck) {
         enemy.stuckTimer--;
-        if(enemy.stuckTimer <= 0) {
+        if (enemy.stuckTimer <= 0) {
             enemy.isStuck = false;
+            enemy.color = "#ff4444";
         }
-
-        //flash red while stuck
-        enemy.color = (Math.floor(Date.now() / 150) % 2 === 0) ? "#ff0000" : "#ff8800";
+        if (Math.floor(Date.now() / 120) % 2 === 0) {
+            enemy.color = "#ff0000";
+        } else {
+            enemy.color = "#ffaa00";
+        }
         return;
     } else {
-        enemy.color = "#ff4444";   // normal color
+        enemy.color = "#ff4444";
     }
-      
-    // Only go into alert AFTER reaction delay
+
+    // ==================== VISION ALERT ====================
     if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
-        enemy.state = "alert";
+
+        // Only trigger once when first entering alert
+        if (enemy.state !== "alert") {
+            enemy.state = "alert";
+            enemy.alertTimer = 0;
+
+            // === SHOOT FIRST (before moving) ===
+            shootAtPlayer();           // First shot
+            shootAtPlayer();
+            shootAtPlayer();
+
+        }
+
         enemy.lastKnownX = player.x;
         enemy.lastKnownY = player.y;
-    } 
+    }
     else if (!enemy.isSeeingPlayer && enemy.state === "alert") {
-        // Player disappeared → start pause timer
         enemy.alertTimer++;
         if (enemy.alertTimer > enemy.pauseTime) {
             enemy.state = "return";
@@ -246,16 +288,21 @@ function updateEnemy() {
         }
     }
 
-    // === Movement based on state ===
+    // ==================== MOVEMENT ====================
     if (enemy.state === "alert") {
         moveToward(enemy, enemy.lastKnownX, enemy.lastKnownY, enemy.speed);
-    } 
+
+        // Optional: Shoot again occasionally while chasing
+        if (enemy.isSeeingPlayer && Math.random() < 0.015) {
+            shootAtPlayer();
+        }
+    }
     else if (enemy.state === "return") {
         moveToward(enemy, enemy.startX, enemy.startY, enemy.speed * 0.8);
-        
+
         var dx = enemy.startX - enemy.x;
         var dy = enemy.startY - enemy.y;
-        if (Math.sqrt(dx*dx + dy*dy) < 12) {
+        if (Math.sqrt(dx * dx + dy * dy) < 12) {
             enemy.state = "patrol";
             enemy.x = enemy.startX;
             enemy.y = enemy.startY;
@@ -267,8 +314,8 @@ function updateEnemy() {
 function moveToward(obj, targetX, targetY, speed) {
     var dx = targetX - obj.x;
     var dy = targetY - obj.y;
-    var dist = Math.sqrt(dx*dx + dy*dy);
-    
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
     if (dist > 5) {
         obj.x += (dx / dist) * speed;
         obj.y += (dy / dist) * speed;
@@ -283,7 +330,7 @@ function dropTrap() {
         // Remove oldest trap
         traps.shift();
     }
-    
+
     var newTrap = {
         x: player.x,
         y: player.y,
@@ -301,7 +348,7 @@ function updateTraps() {
         // Trap catches enemy
         var tdx = enemy.x - trap.x;
         var tdy = enemy.y - trap.y;
-        var trapDistance = Math.sqrt(tdx*tdx + tdy*tdy);
+        var trapDistance = Math.sqrt(tdx * tdx + tdy * tdy);
 
         if (!enemy.isStuck && trapDistance < 35) {
             enemy.isStuck = true;
@@ -315,12 +362,12 @@ function updateTraps() {
     if (enemy.isStuck) {
         var pdx = player.x - enemy.x;
         var pdy = player.y - enemy.y;
-        var killDistance = Math.sqrt(pdx*pdx + pdy*pdy);
+        var killDistance = Math.sqrt(pdx * pdx + pdy * pdy);
 
         if (killDistance < 45) {          // big hitbox while stuck
             console.log("Enemy eliminated!");
             createExplosion(enemy.x, enemy.y);
-            
+
             // Remove enemy
             enemy.x = -9999;
             enemy.isStuck = false;
@@ -335,12 +382,12 @@ function drawTraps() {
 
         context.save();
         context.translate(t.x, t.y);
-        
+
         // Draw a simple star shape
-        context.fillStyle = "#ff00ff";      
+        context.fillStyle = "#ff00ff";
         context.strokeStyle = "#ffff00";
         context.lineWidth = 3;
-        
+
         context.beginPath();
         for (let a = 0; a < 10; a++) {     // 5-point star
             let ang = a * Math.PI / 5 - Math.PI / 2;
@@ -350,7 +397,7 @@ function drawTraps() {
         context.closePath();
         context.fill();
         context.stroke();
-        
+
         context.restore();
     }
 }
@@ -370,19 +417,191 @@ function drawExplosions() {
     for (var i = explosions.length - 1; i >= 0; i--) {
         var e = explosions[i];
         e.life--;
-        
+
         if (e.life <= 0) {
             explosions.splice(i, 1);
             continue;
         }
-        
+
         var alpha = e.life / 30;
         context.save();
         context.globalAlpha = alpha;
         context.fillStyle = "#ffff00";
         context.beginPath();
-        context.arc(e.x, e.y, 25 * (e.life/30), 0, Math.PI*2);
+        context.arc(e.x, e.y, 25 * (e.life / 30), 0, Math.PI * 2);
         context.fill();
         context.restore();
     }
+}
+
+// ====================== BULLET SYSTEM ======================
+
+function createBullet(startX, startY, targetX, targetY, speed = 6) {
+    var dx = targetX - startX;
+    var dy = targetY - startY;
+    var distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Normalize direction
+    var vx = (dx / distance) * speed;
+    var vy = (dy / distance) * speed;
+
+    var bullet = {
+        x: startX,
+        y: startY,
+        vx: vx,
+        vy: vy,
+        size: 6,
+        active: true
+    };
+
+    bullets.push(bullet);
+}
+
+function shootAtPlayer() {
+    // Enemy fires one bullet toward current player position
+    createBullet(enemy.x, enemy.y, player.x, player.y, 7);
+
+    console.log("Enemy fired!");
+}
+
+function updateBullets() {
+    for (var i = bullets.length - 1; i >= 0; i--) {
+        var b = bullets[i];
+
+        if (!b.active) continue;
+
+        // Move bullet
+        b.x += b.vx;
+        b.y += b.vy;
+
+        // Simple wall collision (bullet disappears)
+        if (lineIntersectsRect(b.x, b.y, b.x + b.vx, b.y + b.vy, wall)) {
+            b.active = false;
+        }
+
+        // Player hit detection
+        var pdx = player.x - b.x;
+        var pdy = player.y - b.y;
+        if (Math.sqrt(pdx * pdx + pdy * pdy) < 20) {
+            console.log("Player hit by bullet!");
+            b.active = false;
+            player.lives--;
+
+            if (player.lives > 0) {
+                // Respawn at starting position
+                player.x = player.startX;
+                player.y = player.startY;
+                player.vx = 0;
+                player.vy = 0;
+            } else {
+                gameOver = true;
+            }
+        }
+            // Remove bullet if off screen or inactive
+            if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+                b.active = false;
+            }
+        }
+
+        // Clean up inactive bullets
+        for (var i = bullets.length - 1; i >= 0; i--) {
+            if (!bullets[i].active) {
+                bullets.splice(i, 1);
+            }
+        }
+    }
+
+    function drawBullets() {
+        context.fillStyle = "#000000";   // Black bullets
+        for (var i = 0; i < bullets.length; i++) {
+            var b = bullets[i];
+            if (!b.active) continue;
+
+            context.beginPath();
+            context.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+            context.fill();
+        }
+    }
+
+    function drawLives() {
+    var startX = 30;
+    var startY = 30;
+    var size = 18;
+
+    context.save();
+    context.fillStyle = "#ff2222";
+    context.strokeStyle = "#aa0000";
+    context.lineWidth = 2;
+
+    // Draw red triangles (one per life)
+    for (var i = 0; i < player.lives; i++) {
+        var x = startX + (i * 28);
+        
+        context.beginPath();
+        context.moveTo(x, startY - size/2);           // top point
+        context.lineTo(x - size/2, startY + size/2);  // bottom left
+        context.lineTo(x + size/2, startY + size/2);  // bottom right
+        context.closePath();
+        context.fill();
+        context.stroke();
+    }
+
+    // Draw the number
+    context.fillStyle = "#ff0202";
+    context.font = "bold 20px Arial";
+    context.fillText("× " + player.lives, startX + (player.lives * 28) + 5, startY + 6);
+
+    context.restore();
+}
+
+function drawGameOver() {
+    // Dark overlay
+    context.fillStyle = "rgba(0, 0, 0, 0.75)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Big GAME OVER text
+    context.fillStyle = "#ff2222";
+    context.font = "bold 72px Arial";
+    context.textAlign = "center";
+    context.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 40);
+
+    // Restart instruction
+    context.fillStyle = "#ffffff";
+    context.font = "24px Arial";
+    context.fillText("Press R to Restart", canvas.width / 2, canvas.height / 2 + 30);
+
+    context.textAlign = "left"; // reset alignment
+}
+
+// Restart when pressing R
+document.addEventListener("keydown", function(e) {
+    if (gameOver && e.key.toLowerCase() === "r") {
+        restartGame();
+    }
+});
+
+function restartGame() {
+    // Reset player
+    player.x = player.startX;
+    player.y = player.startY;
+    player.vx = 0;
+    player.vy = 0;
+    player.lives = 3;
+
+    // Reset enemy
+    enemy.x = enemy.startX;
+    enemy.y = enemy.startY;
+    enemy.state = "patrol";
+    enemy.isStuck = false;
+    enemy.isSeeingPlayer = false;
+    enemy.reactionTimer = 0;
+    enemy.alertTimer = 0;
+
+    // Clear bullets and traps
+    bullets = [];
+    traps = [];
+    explosions = [];
+
+    gameOver = false;
+    console.log("Game Restarted");
 }
