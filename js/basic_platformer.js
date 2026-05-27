@@ -27,6 +27,7 @@ player = new GameObject({
 player.lives = 3;
 player.startX = player.x;
 player.startY = player.y;
+player.teleportCooldown = 0;
 
 enemy = new GameObject({
     x: 700,
@@ -35,6 +36,32 @@ enemy = new GameObject({
     height: 40,
     color: "#ff4444"
 });
+
+////////////VENTS (Teleport mechanic)==============================
+
+var vent1 = new GameObject({
+    x: 150,
+    y: 200,
+    width: 60,
+    height: 60,
+    color: "#777777"   // grey
+});
+
+var vent2 = new GameObject({
+    x: 750,
+    y: 600,
+    width: 60,
+    height: 60,
+    color: "#777777"
+});
+
+
+vent1.name = "ventA1";
+vent2.name = "ventA2";
+vent1.partner = vent2;   // vent1 teleports to vent2
+vent2.partner = vent1;   // vent2 teleports to vent1
+
+
 
 wall = new GameObject({
     x: 450,
@@ -126,6 +153,10 @@ function animate() {
         spacebar = false;        // So you drop only ONE trap per key press
     }
 
+    //// Vent Teleport check=========================
+    checkVents();
+
+
     // 4. Vision (must come after player movement)
     checkVision();
 
@@ -136,6 +167,8 @@ function animate() {
 
     // 6. DRAW (only once each)
     wall.drawRect();
+    drawVent(vent1);
+    drawVent(vent2);
     drawTraps();
     drawExplosions();
     player.drawRect();
@@ -497,33 +530,33 @@ function updateBullets() {
                 gameOver = true;
             }
         }
-            // Remove bullet if off screen or inactive
-            if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
-                b.active = false;
-            }
-        }
-
-        // Clean up inactive bullets
-        for (var i = bullets.length - 1; i >= 0; i--) {
-            if (!bullets[i].active) {
-                bullets.splice(i, 1);
-            }
+        // Remove bullet if off screen or inactive
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
+            b.active = false;
         }
     }
 
-    function drawBullets() {
-        context.fillStyle = "#000000";   // Black bullets
-        for (var i = 0; i < bullets.length; i++) {
-            var b = bullets[i];
-            if (!b.active) continue;
-
-            context.beginPath();
-            context.arc(b.x, b.y, b.size, 0, Math.PI * 2);
-            context.fill();
+    // Clean up inactive bullets
+    for (var i = bullets.length - 1; i >= 0; i--) {
+        if (!bullets[i].active) {
+            bullets.splice(i, 1);
         }
     }
+}
 
-    function drawLives() {
+function drawBullets() {
+    context.fillStyle = "#000000";   // Black bullets
+    for (var i = 0; i < bullets.length; i++) {
+        var b = bullets[i];
+        if (!b.active) continue;
+
+        context.beginPath();
+        context.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+        context.fill();
+    }
+}
+
+function drawLives() {
     var startX = 30;
     var startY = 30;
     var size = 18;
@@ -536,11 +569,11 @@ function updateBullets() {
     // Draw red triangles (one per life)
     for (var i = 0; i < player.lives; i++) {
         var x = startX + (i * 28);
-        
+
         context.beginPath();
-        context.moveTo(x, startY - size/2);           // top point
-        context.lineTo(x - size/2, startY + size/2);  // bottom left
-        context.lineTo(x + size/2, startY + size/2);  // bottom right
+        context.moveTo(x, startY - size / 2);           // top point
+        context.lineTo(x - size / 2, startY + size / 2);  // bottom left
+        context.lineTo(x + size / 2, startY + size / 2);  // bottom right
         context.closePath();
         context.fill();
         context.stroke();
@@ -553,6 +586,84 @@ function updateBullets() {
 
     context.restore();
 }
+
+// ====================== DRAW VENT ======================
+
+function drawVent(vent) {
+    context.save();
+    
+    // main vent body (slightly smaller than the hitbox)
+    var inset = 6;
+    context.fillStyle = "#555555";           // darker grey
+    context.fillRect(
+        vent.x - vent.width/2 + inset, 
+        vent.y - vent.height/2 + inset, 
+        vent.width - inset*2, 
+        vent.height - inset*2
+    );
+
+    //vent grate lines (horizontal)
+    context.strokeStyle = "#222222";
+    context.lineWidth = 4;
+    
+    var lineSpacing = 10;
+    var startY = vent.y - vent.height/2 + inset + 8;
+    
+    for (let i = 0; i < 5; i++) {
+        var y = startY + (i * lineSpacing);
+        context.beginPath();
+        context.moveTo(vent.x - vent.width/2 + inset + 4, y);
+        context.lineTo(vent.x + vent.width/2 - inset - 4, y);
+        context.stroke();
+    }
+
+    //  border
+    context.strokeStyle = "#333333";
+    context.lineWidth = 3;
+    context.strokeRect(
+        vent.x - vent.width/2 + inset, 
+        vent.y - vent.height/2 + inset, 
+        vent.width - inset*2, 
+        vent.height - inset*2
+    );
+
+    context.restore();
+}
+
+// ====================== VENT TELEPORT SYSTEM ======================
+
+function checkVents() {
+    if (player.teleportCooldown > 0) {
+        player.teleportCooldown--;
+        return;   // ignore vents while cooling down
+    }
+
+    if (player.hitTestObject(vent1)) {
+        teleportPlayer(vent1.partner);
+        return;
+    }
+    
+    if (player.hitTestObject(vent2)) {
+        teleportPlayer(vent2.partner);
+        return;
+    }
+}
+function teleportPlayer(targetVent) {
+    // Teleport to the center of the partner vent
+    player.x = targetVent.x + 45;
+    player.y = targetVent.y;
+
+    //prevent constant teleporting====
+    player.teleportCooldown = 45;
+
+    console.log("Teleported through vent!");
+}
+
+
+
+
+
+///////////////////////////////Restart Game Stuff=================================================
 
 function drawGameOver() {
     // Dark overlay
@@ -574,7 +685,7 @@ function drawGameOver() {
 }
 
 // Restart when pressing R
-document.addEventListener("keydown", function(e) {
+document.addEventListener("keydown", function (e) {
     if (gameOver && e.key.toLowerCase() === "r") {
         restartGame();
     }
