@@ -3,7 +3,7 @@ var context;
 var timer;
 var interval;
 var player;
-var gameOver = false;
+var gameState = "title";
 
 var enemy;
 
@@ -12,14 +12,16 @@ var traps = [];
 var explosions = [];
 var bullets = [];
 
+
+
 canvas = document.getElementById("canvas");
 context = canvas.getContext("2d");
 
 player = new GameObject({
     x: 200,
     y: 400,
-    width: 40,
-    height: 40,
+    width: 20,
+    height: 20,
     color: "#00ff88",
 });
 
@@ -32,8 +34,8 @@ player.teleportCooldown = 0;
 enemy = new GameObject({
     x: 700,
     y: 400,
-    width: 40,
-    height: 40,
+    width: 20,
+    height: 20,
     color: "#ff4444"
 });
 
@@ -42,16 +44,16 @@ enemy = new GameObject({
 var vent1 = new GameObject({
     x: 150,
     y: 200,
-    width: 60,
-    height: 60,
+    width: 30,
+    height: 30,
     color: "#777777"   // grey
 });
 
 var vent2 = new GameObject({
     x: 750,
     y: 600,
-    width: 60,
-    height: 60,
+    width: 30,
+    height: 30,
     color: "#777777"
 });
 
@@ -106,8 +108,18 @@ function animate() {
 
     context.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (gameOver) {
+    if (gameState === "title") {
+        drawTitleScreen();
+        return;   // stop the rest of the game from running
+    }
+
+    if (gameState === "gameOver") {
         drawGameOver();
+        return;
+    }
+
+    if (gameState === "instructions") {
+        drawInstructions();
         return;
     }
 
@@ -150,7 +162,7 @@ function animate() {
 
     if (spacebar) {
         dropTrap();
-        spacebar = false;        // So you drop only ONE trap per key press
+        spacebar = false;        // One trap per press
     }
 
     //// Vent Teleport check=========================
@@ -173,7 +185,8 @@ function animate() {
     drawExplosions();
     player.drawRect();
     enemy.drawRect();
-    drawVisionLine();
+    drawExclamation();
+   // drawVisionLine(); //for debugging enemy vision
     drawBullets();
     drawLives();
 }
@@ -527,7 +540,7 @@ function updateBullets() {
                 player.vx = 0;
                 player.vy = 0;
             } else {
-                gameOver = true;
+                gameState = "gameOver";
             }
         }
         // Remove bullet if off screen or inactive
@@ -591,29 +604,29 @@ function drawLives() {
 
 function drawVent(vent) {
     context.save();
-    
+
     // main vent body (slightly smaller than the hitbox)
     var inset = 6;
     context.fillStyle = "#555555";           // darker grey
     context.fillRect(
-        vent.x - vent.width/2 + inset, 
-        vent.y - vent.height/2 + inset, 
-        vent.width - inset*2, 
-        vent.height - inset*2
+        vent.x - vent.width / 2 + inset,
+        vent.y - vent.height / 2 + inset,
+        vent.width - inset * 2,
+        vent.height - inset * 2
     );
 
     //vent grate lines (horizontal)
     context.strokeStyle = "#222222";
     context.lineWidth = 4;
-    
-    var lineSpacing = 10;
-    var startY = vent.y - vent.height/2 + inset + 8;
-    
+
+    var lineSpacing = 2;
+    var startY = vent.y - vent.height / 2 + inset + 8;
+
     for (let i = 0; i < 5; i++) {
         var y = startY + (i * lineSpacing);
         context.beginPath();
-        context.moveTo(vent.x - vent.width/2 + inset + 4, y);
-        context.lineTo(vent.x + vent.width/2 - inset - 4, y);
+        context.moveTo(vent.x - vent.width / 2 + inset + 4, y);
+        context.lineTo(vent.x + vent.width / 2 - inset - 4, y);
         context.stroke();
     }
 
@@ -621,10 +634,10 @@ function drawVent(vent) {
     context.strokeStyle = "#333333";
     context.lineWidth = 3;
     context.strokeRect(
-        vent.x - vent.width/2 + inset, 
-        vent.y - vent.height/2 + inset, 
-        vent.width - inset*2, 
-        vent.height - inset*2
+        vent.x - vent.width / 2 + inset,
+        vent.y - vent.height / 2 + inset,
+        vent.width - inset * 2,
+        vent.height - inset * 2
     );
 
     context.restore();
@@ -642,7 +655,7 @@ function checkVents() {
         teleportPlayer(vent1.partner);
         return;
     }
-    
+
     if (player.hitTestObject(vent2)) {
         teleportPlayer(vent2.partner);
         return;
@@ -686,7 +699,7 @@ function drawGameOver() {
 
 // Restart when pressing R
 document.addEventListener("keydown", function (e) {
-    if (gameOver && e.key.toLowerCase() === "r") {
+    if (gameState === "gameOver" && e.key.toLowerCase() === "r") {
         restartGame();
     }
 });
@@ -708,11 +721,146 @@ function restartGame() {
     enemy.reactionTimer = 0;
     enemy.alertTimer = 0;
 
-    // Clear bullets and traps
+    // Clear arrays
     bullets = [];
     traps = [];
     explosions = [];
 
-    gameOver = false;
+    // gamestate update
+    gameState = "playing";
+
     console.log("Game Restarted");
+}
+
+// ====================== MOUSE SUPPORT ======================
+var mouseX = 0;
+var mouseY = 0;
+
+canvas.addEventListener("mousemove", function(e) {
+    var rect = canvas.getBoundingClientRect();
+    mouseX = e.clientX - rect.left;
+    mouseY = e.clientY - rect.top;
+});
+
+canvas.addEventListener("click", function(e) {
+    if (gameState === "title") {
+        if (isButtonClicked(200, 380, 600, 80)) {        // START
+            gameState = "playing";
+        }
+        else if (isButtonClicked(200, 480, 600, 80)) {   // CONTROLS
+            gameState = "instructions";
+        }
+        else if (isButtonClicked(200, 580, 600, 80)) {   // QUIT
+            location.reload();
+        }
+    }
+    else if (gameState === "instructions") {
+        // Clicking anywhere on instructions screen goes back to title
+        gameState = "title";
+    }
+});
+
+function isButtonClicked(btnX, btnY, btnW, btnH) {
+    return mouseX > btnX && mouseX < btnX + btnW &&
+           mouseY > btnY && mouseY < btnY + btnH;
+}
+
+function drawTitleScreen() {
+    // Dark background
+    context.fillStyle = "#111133";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Title text
+    context.fillStyle = "#ffcc00";
+    context.font = "bold 92px Arial";
+    context.textAlign = "center";
+    context.fillText("STEALTH SPIDER", canvas.width / 2, 220);
+
+    // Subtitle
+    context.fillStyle = "#aaaaaa";
+    context.font = "28px Arial";
+    context.fillText("a tiny Metal Gear prototype", canvas.width / 2, 280);
+
+    // Buttons
+    drawButton("START", 200, 380, 600, 80);
+    drawButton("CONTROLS", 200, 480, 600, 80);
+    drawButton("QUIT", 200, 580, 600, 80);
+
+    context.textAlign = "left"; // reset
+}
+
+function drawButton(text, x, y, w, h) {
+    // Button background
+    context.fillStyle = "#222255";
+    context.fillRect(x, y, w, h);
+
+    // Button border
+    context.strokeStyle = "#ffcc00";
+    context.lineWidth = 6;
+    context.strokeRect(x, y, w, h);
+
+    // Button text
+    context.fillStyle = "#ffffff";
+    context.font = "bold 36px Arial";
+    context.textAlign = "center";
+    context.fillText(text, x + w / 2, y + h / 2 + 12);
+}
+
+/////////////INSTRUCTIONS==============================
+
+
+function drawInstructions() {
+    // Dark background
+    context.fillStyle = "#111133";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Title
+    context.fillStyle = "#ffcc00";
+    context.font = "bold 60px Arial";
+    context.textAlign = "center";
+    context.fillText("CONTROLS", canvas.width / 2, 140);
+
+    // Instructions list
+    context.fillStyle = "#ffffff";
+    context.font = "bold 28px Arial";
+    context.textAlign = "left";
+
+    var startY = 220;
+    var lineHeight = 45;
+
+    context.fillText("W / A / S / D     Move",          250, startY);
+    context.fillText("SPACE             Drop Trap",      250, startY + lineHeight);
+    context.fillText("Walk into flashing enemy = Kill", 250, startY + lineHeight * 2);
+    context.fillText("Step on grey vents to escape fast!", 250, startY + lineHeight * 3);
+
+    // Back instruction
+    context.fillStyle = "#aaaaaa";
+    context.font = "24px Arial";
+    context.textAlign = "center";
+    context.fillText("Click anywhere or press ESC to go back", canvas.width / 2, 620);
+
+    context.textAlign = "left"; // reset
+}
+
+// ====================== ALERT EXCLAMATION MARK ======================
+
+function drawExclamation() {
+    // Only show when enemy is actively alert
+    if (enemy.state !== "alert") return;
+
+    context.save();
+    
+   
+    context.fillStyle = "#ff0000";
+    // context.strokeStyle = "#000000";
+    context.lineWidth = 4;
+    context.font = "bold 42px Arial";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    
+    // Draw the !
+    context.fillText("!", enemy.x, enemy.y - enemy.height/2 - 35);
+    //context.strokeText("!", enemy.x, enemy.y - enemy.height/2 - 35);
+    
+    context.restore();
 }
