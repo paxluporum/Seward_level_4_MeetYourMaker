@@ -5,88 +5,100 @@ var interval;
 var player;
 var gameState = "title";
 
-var enemy;
-
-var wall;
 var traps = [];
 var explosions = [];
 var bullets = [];
 
 
-
 canvas = document.getElementById("canvas");
 context = canvas.getContext("2d");
+// ====================== LEVEL DATA ======================
+const tileSize = 40;
 
-player = new GameObject({
-    x: 200,
-    y: 400,
-    width: 20,
-    height: 20,
-    color: "#00ff88",
-});
+const levelMap = [
+    "000000000000000000000000000000",   // row 0
+    "020000000000000000000000000003",   // row 1 - player and enemy
+    "000000000000000000000000000000",   // row 2
+    "001111111111111111110000000000",   // row 3
+    "001100000000000000110000000000",   // row 4 - wider corridors
+    "001100000000000000110000000000",   // row 5
+    "001111111111111111110000000000",   // row 6
+    "000000000000000000000000000000",   // row 7
+    "000011111111111111111111110000",   // row 8
+    "000000000000000000000000000000"    // row 9
+];
 
-///Player lives======
-player.lives = 3;
-player.startX = player.x;
-player.startY = player.y;
-player.teleportCooldown = 0;
+// === CREATE LEVEL FROM ARRAY ===
+var walls = [];
+var enemies = [];
+var vent1, vent2;
 
-enemy = new GameObject({
-    x: 700,
-    y: 400,
-    width: 20,
-    height: 20,
-    color: "#ff4444"
-});
+player = new GameObject({ width: 20, height: 20, color: "#00ff88" });
 
-////////////VENTS (Teleport mechanic)==============================
+for (let row = 0; row < levelMap.length; row++) {
+    for (let col = 0; col < levelMap[row].length; col++) {
+        let x = col * tileSize + tileSize / 2;
+        let y = row * tileSize + tileSize / 2;
+        let symbol = levelMap[row][col];
 
-var vent1 = new GameObject({
-    x: 150,
-    y: 200,
-    width: 30,
-    height: 30,
-    color: "#777777"   // grey
-});
+        if (symbol === "1") {
+            let wall = new GameObject({
+                x: x,
+                y: y,
+                width: tileSize,
+                height: tileSize,
+                color: "#555577"
+            });
+            walls.push(wall);
+        }
+        else if (symbol === "2") {
+            player.x = x;
+            player.y = y;
+            player.startX = x;
+            player.startY = y;
+        }
+else if (symbol === "3") {
+    let e = new GameObject({
+        x: x,
+        y: y,
+        width: 20,
+        height: 20,
+        color: "#ff4444"
+    });
 
-var vent2 = new GameObject({
-    x: 750,
-    y: 600,
-    width: 30,
-    height: 30,
-    color: "#777777"
-});
+    e.startX = x;
+    e.startY = y;
+    e.lastKnownX = x;
+    e.lastKnownY = y;
+    e.speed = 2.5;
+    e.state = "patrol";
+    e.alertTimer = 0;
+    e.pauseTime = 200;
+    e.reactionTime = 30;        // fast for testing
+    e.reactionTimer = 0;
+    e.isStuck = false;
+    e.stuckTimer = 0;
+    e.visionLength = 500;
+    e.isSeeingPlayer = false;
 
+    enemies.push(e);
+}
+        else if (symbol === "4") {
+            vent1 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
+            vent1.name = "ventA1";
+        }
+        else if (symbol === "5") {
+            vent2 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
+            vent2.name = "ventA2";
+        }
+    }
+}
 
-vent1.name = "ventA1";
-vent2.name = "ventA2";
-vent1.partner = vent2;   // vent1 teleports to vent2
-vent2.partner = vent1;   // vent2 teleports to vent1
-
-
-
-wall = new GameObject({
-    x: 450,
-    y: 400,
-    width: 60,
-    height: 300,
-    color: "#555577"
-});
-//////////////////////////////////////////
-
-// === ENEMY AI SETTINGS ===
-enemy.startX = enemy.x;
-enemy.startY = enemy.y;
-enemy.lastKnownX = enemy.x;
-enemy.lastKnownY = enemy.y;
-enemy.speed = 2.5;
-enemy.state = "patrol";
-enemy.alertTimer = 0;
-enemy.pauseTime = 200;               // frames to pause at last known spot
-enemy.reactionTime = 90;            // ≈ 0.75 seconds at 60fps
-enemy.reactionTimer = 0;
-enemy.isStuck = false;
-enemy.stuckTimer = 0;
+// Connect vents to each other
+if (vent1 && vent2) {
+    vent1.partner = vent2;
+    vent2.partner = vent1;
+}
 
 //////////////
 
@@ -94,9 +106,9 @@ var fX = .8;
 var fY = .8;
 
 // Vision settings for the enemy
-enemy.visionLength = 500;     // how far the guard can see
-enemy.visionColor = "#ffff00"; // yellow for testing
-enemy.isSeeingPlayer = false;
+// enemy.visionLength = 500;     // how far the guard can see
+// enemy.visionColor = "#ffff00"; // yellow for testing
+// enemy.isSeeingPlayer = false;
 
 
 ///////////////////
@@ -139,22 +151,16 @@ function animate() {
 
     /////Collisions------------------------------------------------
 
-    while (wall.hitTestPoint(player.bottom()) && player.vy >= 0) {
-        player.y--;
+// === COLLISION WITH ALL WALLS ===
+for (let i = 0; i < walls.length; i++) {
+    let wall = walls[i];
+    if (player.hitTestObject(wall)) {
+        player.x -= Math.sign(player.vx) * 4;
+        player.y -= Math.sign(player.vy) * 4;
+        player.vx = 0;
         player.vy = 0;
     }
-    while (wall.hitTestPoint(player.left()) && player.vx <= 0) {
-        player.x++;
-        player.vx = 0;
-    }
-    while (wall.hitTestPoint(player.right()) && player.vx >= 0) {
-        player.x--;
-        player.vx = 0;
-    }
-    while (wall.hitTestPoint(player.top()) && player.vy <= 0) {
-        player.y++;
-        player.vy = 0;
-    }
+}
 
     //----------------------------------------------------------
 
@@ -170,97 +176,105 @@ function animate() {
 
 
     // 4. Vision (must come after player movement)
-    checkVision();
+    // checkVision();
+    // Draw enemies (logic + drawing)
+    updateEnemies();                    // handles AI + stuck flashing
+    for (let i = 0; i < enemies.length; i++) {
+        enemies[i].drawRect();
+    }
 
-    // 5. Enemy AI + systems
-    updateEnemy();
     updateTraps();
     updateBullets();
 
-    // 6. DRAW (only once each)
-    wall.drawRect();
-    drawVent(vent1);
-    drawVent(vent2);
+// 6. DRAW (only once each)
+    // Draw all walls
+    for (let i = 0; i < walls.length; i++) {
+        walls[i].drawRect();
+    }
+
+    // Draw vents
+    if (vent1) drawVent(vent1);
+    if (vent2) drawVent(vent2);
+
     drawTraps();
     drawExplosions();
     player.drawRect();
-    enemy.drawRect();
-    drawExclamation();
-   // drawVisionLine(); //for debugging enemy vision
+
+    drawExclamation();      // exclamation marks above alert enemies
     drawBullets();
     drawLives();
 }
 
 // ====================== VISION SYSTEM ======================
 
-function checkVision() {
-    enemy.isSeeingPlayer = false;
+// function checkVision() {
+//     enemy.isSeeingPlayer = false;
 
-    var dx = player.x - enemy.x;
-    var dy = player.y - enemy.y;
-    var distance = Math.sqrt(dx * dx + dy * dy);
+//     var dx = player.x - enemy.x;
+//     var dy = player.y - enemy.y;
+//     var distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > enemy.visionLength) {
-        enemy.reactionTimer = 0;
-        return;
-    }
+//     if (distance > enemy.visionLength) {
+//         enemy.reactionTimer = 0;
+//         return;
+//     }
 
-    // Wall blocking check with small buffer
-    var wallBlocking = lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall);
+//     // Wall blocking check with small buffer
+//     var wallBlocking = lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall);
 
-    if (wallBlocking) {
-        // 
-        // For this vertical wall, we check X position
-        var enemySide;
-        if (enemy.x < wall.x) {
-            enemySide = "left";
-        } else {
-            enemySide = "right";
-        }
-        var playerSide;
-        if (player.x < wall.x) {
-            playerSide = "left"
-        } else {
-            playerSide = "right"
-        }
+//     if (wallBlocking) {
+//         // 
+//         // For this vertical wall, we check X position
+//         var enemySide;
+//         if (enemy.x < wall.x) {
+//             enemySide = "left";
+//         } else {
+//             enemySide = "right";
+//         }
+//         var playerSide;
+//         if (player.x < wall.x) {
+//             playerSide = "left"
+//         } else {
+//             playerSide = "right"
+//         }
 
-        if (enemySide !== playerSide) {
-            console.log("WALL BLOCKING - Player behind wall");
-            enemy.reactionTimer = 0;
-            return;
-        }
-    }
+//         if (enemySide !== playerSide) {
+//             console.log("WALL BLOCKING - Player behind wall");
+//             enemy.reactionTimer = 0;
+//             return;
+//         }
+//     }
 
-    // Clear line of sight
-    enemy.isSeeingPlayer = true;
+//     // Clear line of sight
+//     enemy.isSeeingPlayer = true;
 
-    if (enemy.reactionTimer < 1) {
-        enemy.reactionTimer = 1;
-    } else {
-        enemy.reactionTimer++;
-    }
-}
-function drawVisionLine() {
-    // Draw the vision ray toward the player (for testing)
-    var dx = player.x - enemy.x;
-    var dy = player.y - enemy.y;
-    var distance = Math.sqrt(dx * dx + dy * dy);
+//     if (enemy.reactionTimer < 1) {
+//         enemy.reactionTimer = 1;
+//     } else {
+//         enemy.reactionTimer++;
+//     }
+// }
+// function drawVisionLine() {
+//     // Draw the vision ray toward the player (for testing)
+//     var dx = player.x - enemy.x;
+//     var dy = player.y - enemy.y;
+//     var distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > enemy.visionLength) return;
+//     if (distance > enemy.visionLength) return;
 
-    // Step 3: Normalize the direction and extend it to visionLength
-    var endX = enemy.x + (dx / distance) * enemy.visionLength;
-    var endY = enemy.y + (dy / distance) * enemy.visionLength;
+//     // Step 3: Normalize the direction and extend it to visionLength
+//     var endX = enemy.x + (dx / distance) * enemy.visionLength;
+//     var endY = enemy.y + (dy / distance) * enemy.visionLength;
 
-    context.save();
-    context.strokeStyle = enemy.isSeeingPlayer ? "#ff0000" : "#ffff00"; // red = sees you!
-    context.lineWidth = 3;
-    context.beginPath();
-    context.moveTo(enemy.x, enemy.y);
-    context.lineTo(endX, endY);
-    context.stroke();
-    context.restore();
-}
+//     context.save();
+//     context.strokeStyle = enemy.isSeeingPlayer ? "#ff0000" : "#ffff00"; // red = sees you!
+//     context.lineWidth = 3;
+//     context.beginPath();
+//     context.moveTo(enemy.x, enemy.y);
+//     context.lineTo(endX, endY);
+//     context.stroke();
+//     context.restore();
+// }
 
 // Line vs rectangle intersection (good enough for one wall)
 function lineIntersectsRect(x1, y1, x2, y2, rect) {
@@ -290,71 +304,71 @@ function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
 
 ///-----------------ENEMY AI STUFF
 
-function updateEnemy() {
-    // ==================== STUCK LOGIC ====================
-    if (enemy.isStuck) {
-        enemy.stuckTimer--;
-        if (enemy.stuckTimer <= 0) {
-            enemy.isStuck = false;
-            enemy.color = "#ff4444";
-        }
-        if (Math.floor(Date.now() / 120) % 2 === 0) {
-            enemy.color = "#ff0000";
-        } else {
-            enemy.color = "#ffaa00";
-        }
-        return;
-    } else {
-        enemy.color = "#ff4444";
-    }
+// function updateEnemy() {
+//     // ==================== STUCK LOGIC ====================
+//     if (enemy.isStuck) {
+//         enemy.stuckTimer--;
+//         if (enemy.stuckTimer <= 0) {
+//             enemy.isStuck = false;
+//             enemy.color = "#ff4444";
+//         }
+//         if (Math.floor(Date.now() / 120) % 2 === 0) {
+//             enemy.color = "#ff0000";
+//         } else {
+//             enemy.color = "#ffaa00";
+//         }
+//         return;
+//     } else {
+//         enemy.color = "#ff4444";
+//     }
 
-    // ==================== VISION ALERT ====================
-    if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
+//     // ==================== VISION ALERT ====================
+//     if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
 
-        // Only trigger once when first entering alert
-        if (enemy.state !== "alert") {
-            enemy.state = "alert";
-            enemy.alertTimer = 0;
+//         // Only trigger once when first entering alert
+//         if (enemy.state !== "alert") {
+//             enemy.state = "alert";
+//             enemy.alertTimer = 0;
 
-            // === SHOOT FIRST (before moving) ===
-            shootAtPlayer();           // First shot
-            shootAtPlayer();
-            shootAtPlayer();
+//             // === SHOOT FIRST (before moving) ===
+//             shootAtPlayer();           // First shot
+//             shootAtPlayer();
+//             shootAtPlayer();
 
-        }
+//         }
 
-        enemy.lastKnownX = player.x;
-        enemy.lastKnownY = player.y;
-    }
-    else if (!enemy.isSeeingPlayer && enemy.state === "alert") {
-        enemy.alertTimer++;
-        if (enemy.alertTimer > enemy.pauseTime) {
-            enemy.state = "return";
-            enemy.alertTimer = 0;
-        }
-    }
+//         enemy.lastKnownX = player.x;
+//         enemy.lastKnownY = player.y;
+//     }
+//     else if (!enemy.isSeeingPlayer && enemy.state === "alert") {
+//         enemy.alertTimer++;
+//         if (enemy.alertTimer > enemy.pauseTime) {
+//             enemy.state = "return";
+//             enemy.alertTimer = 0;
+//         }
+//     }
 
-    // ==================== MOVEMENT ====================
-    if (enemy.state === "alert") {
-        moveToward(enemy, enemy.lastKnownX, enemy.lastKnownY, enemy.speed);
+//     // ==================== MOVEMENT ====================
+//     if (enemy.state === "alert") {
+//         moveToward(enemy, enemy.lastKnownX, enemy.lastKnownY, enemy.speed);
 
-        // Optional: Shoot again occasionally while chasing
-        if (enemy.isSeeingPlayer && Math.random() < 0.015) {
-            shootAtPlayer();
-        }
-    }
-    else if (enemy.state === "return") {
-        moveToward(enemy, enemy.startX, enemy.startY, enemy.speed * 0.8);
+//         // Optional: Shoot again occasionally while chasing
+//         if (enemy.isSeeingPlayer && Math.random() < 0.015) {
+//             shootAtPlayer();
+//         }
+//     }
+//     else if (enemy.state === "return") {
+//         moveToward(enemy, enemy.startX, enemy.startY, enemy.speed * 0.8);
 
-        var dx = enemy.startX - enemy.x;
-        var dy = enemy.startY - enemy.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 12) {
-            enemy.state = "patrol";
-            enemy.x = enemy.startX;
-            enemy.y = enemy.startY;
-        }
-    }
-}
+//         var dx = enemy.startX - enemy.x;
+//         var dy = enemy.startY - enemy.y;
+//         if (Math.sqrt(dx * dx + dy * dy) < 12) {
+//             enemy.state = "patrol";
+//             enemy.x = enemy.startX;
+//             enemy.y = enemy.startY;
+//         }
+//     }
+// }
 
 // Simple movement helper
 function moveToward(obj, targetX, targetY, speed) {
@@ -391,33 +405,38 @@ function updateTraps() {
         var trap = traps[i];
         if (!trap.active) continue;
 
-        // Trap catches enemy
-        var tdx = enemy.x - trap.x;
-        var tdy = enemy.y - trap.y;
-        var trapDistance = Math.sqrt(tdx * tdx + tdy * tdy);
+        // Check every enemy for trap collision
+        for (var j = 0; j < enemies.length; j++) {
+            var e = enemies[j];
 
-        if (!enemy.isStuck && trapDistance < 35) {
-            enemy.isStuck = true;
-            enemy.stuckTimer = 180;
-            trap.active = false;
-            console.log("Enemy caught in trap!");
+            var tdx = e.x - trap.x;
+            var tdy = e.y - trap.y;
+            var trapDistance = Math.sqrt(tdx*tdx + tdy*tdy);
+
+            if (!e.isStuck && trapDistance < 35) {
+                e.isStuck = true;
+                e.stuckTimer = 180;
+                trap.active = false;
+                console.log("Enemy caught in trap!");
+                break;
+            }
         }
     }
 
-    // === PAC-MAN STYLE KILL===
-    if (enemy.isStuck) {
-        var pdx = player.x - enemy.x;
-        var pdy = player.y - enemy.y;
-        var killDistance = Math.sqrt(pdx * pdx + pdy * pdy);
+    // Check if player kills any stuck enemy
+    for (var j = 0; j < enemies.length; j++) {
+        var e = enemies[j];
+        if (e.isStuck) {
+            var pdx = player.x - e.x;
+            var pdy = player.y - e.y;
+            var killDistance = Math.sqrt(pdx*pdx + pdy*pdy);
 
-        if (killDistance < 45) {          // big hitbox while stuck
-            console.log("Enemy eliminated!");
-            createExplosion(enemy.x, enemy.y);
-
-            // Remove enemy
-            enemy.x = -9999;
-            enemy.isStuck = false;
-            enemy.color = "#ff4444";
+            if (killDistance < 45) {
+                console.log("Enemy eliminated!");
+                createExplosion(e.x, e.y);
+                e.x = -9999;           // remove enemy
+                e.isStuck = false;
+            }
         }
     }
 }
@@ -513,15 +532,21 @@ function shootAtPlayer() {
 function updateBullets() {
     for (var i = bullets.length - 1; i >= 0; i--) {
         var b = bullets[i];
-
         if (!b.active) continue;
 
         // Move bullet
         b.x += b.vx;
         b.y += b.vy;
 
-        // Simple wall collision (bullet disappears)
-        if (lineIntersectsRect(b.x, b.y, b.x + b.vx, b.y + b.vy, wall)) {
+        // === NEW: Bullet collision with ANY wall ===
+        var hitWall = false;
+        for (var j = 0; j < walls.length; j++) {
+            if (lineIntersectsRect(b.x, b.y, b.x + b.vx, b.y + b.vy, walls[j])) {
+                hitWall = true;
+                break;
+            }
+        }
+        if (hitWall) {
             b.active = false;
         }
 
@@ -534,7 +559,6 @@ function updateBullets() {
             player.lives--;
 
             if (player.lives > 0) {
-                // Respawn at starting position
                 player.x = player.startX;
                 player.y = player.startY;
                 player.vx = 0;
@@ -543,7 +567,8 @@ function updateBullets() {
                 gameState = "gameOver";
             }
         }
-        // Remove bullet if off screen or inactive
+
+        // Remove off-screen bullets
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             b.active = false;
         }
@@ -558,15 +583,20 @@ function updateBullets() {
 }
 
 function drawBullets() {
-    context.fillStyle = "#000000";   // Black bullets
+    context.shadowBlur = 12;
+    context.shadowColor = "#ff00ff";
+
     for (var i = 0; i < bullets.length; i++) {
         var b = bullets[i];
         if (!b.active) continue;
 
+        context.fillStyle = "#ff00f28e";   // bright yellow
         context.beginPath();
-        context.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+        context.arc(b.x, b.y, 8, 0, Math.PI * 2);   // larger
         context.fill();
     }
+
+    context.shadowBlur = 0; // reset
 }
 
 function drawLives() {
@@ -648,19 +678,21 @@ function drawVent(vent) {
 function checkVents() {
     if (player.teleportCooldown > 0) {
         player.teleportCooldown--;
-        return;   // ignore vents while cooling down
+        return;
     }
 
-    if (player.hitTestObject(vent1)) {
+    // Safe checks so it doesn't crash when vents don't exist
+    if (vent1 && player.hitTestObject(vent1)) {
         teleportPlayer(vent1.partner);
         return;
     }
 
-    if (player.hitTestObject(vent2)) {
+    if (vent2 && player.hitTestObject(vent2)) {
         teleportPlayer(vent2.partner);
         return;
     }
 }
+
 function teleportPlayer(targetVent) {
     // Teleport to the center of the partner vent
     player.x = targetVent.x + 45;
@@ -711,22 +743,28 @@ function restartGame() {
     player.vx = 0;
     player.vy = 0;
     player.lives = 3;
+    player.teleportCooldown = 0;   // important for vents
 
-    // Reset enemy
-    enemy.x = enemy.startX;
-    enemy.y = enemy.startY;
-    enemy.state = "patrol";
-    enemy.isStuck = false;
-    enemy.isSeeingPlayer = false;
-    enemy.reactionTimer = 0;
-    enemy.alertTimer = 0;
+    // === Reset ALL enemies ===
+    for (let i = 0; i < enemies.length; i++) {
+        let e = enemies[i];   // "e" = current enemy
+
+        e.x = e.startX;
+        e.y = e.startY;
+        e.state = "patrol";
+        e.isStuck = false;
+        e.isSeeingPlayer = false;
+        e.reactionTimer = 0;
+        e.alertTimer = 0;
+        e.color = "#ff4444";          // back to normal color
+    }
 
     // Clear arrays
     bullets = [];
     traps = [];
     explosions = [];
 
-    // gamestate update
+    // Reset game state
     gameState = "playing";
 
     console.log("Game Restarted");
@@ -845,22 +883,130 @@ function drawInstructions() {
 // ====================== ALERT EXCLAMATION MARK ======================
 
 function drawExclamation() {
-    // Only show when enemy is actively alert
-    if (enemy.state !== "alert") return;
+    for (let i = 0; i < enemies.length; i++) {
+        let e = enemies[i];
+        if (e.state !== "alert") continue;
 
-    context.save();
-    
-   
-    context.fillStyle = "#ff0000";
-    // context.strokeStyle = "#000000";
-    context.lineWidth = 4;
-    context.font = "bold 42px Arial";
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    
-    // Draw the !
-    context.fillText("!", enemy.x, enemy.y - enemy.height/2 - 35);
-    //context.strokeText("!", enemy.x, enemy.y - enemy.height/2 - 35);
-    
-    context.restore();
+        context.save();
+        context.fillStyle = "#ff0000";
+        context.font = "bold 42px Arial";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText("!", e.x, e.y - e.height/2 - 35);
+        context.restore();
+    }
+}
+// ====================== VISION FOR EACH ENEMY ======================
+function checkVisionForEnemy(e) {
+    e.isSeeingPlayer = false;
+
+    var dx = player.x - e.x;
+    var dy = player.y - e.y;
+    var distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > e.visionLength || distance < 10) {
+        e.reactionTimer = 0;
+        return;
+    }
+
+    // === CLOSE-RANGE BYPASS ===
+    // If the player is very close, we assume clear line of sight
+    // (prevents false blocking when standing right next to the enemy)
+    if (distance < 80) {
+        e.isSeeingPlayer = true;
+        if (e.reactionTimer < 1) e.reactionTimer = 1;
+        else e.reactionTimer++;
+        return;
+    }
+
+    // === NORMAL WALL BLOCKING CHECK ===
+    var wallBlocking = false;
+    for (let i = 0; i < walls.length; i++) {
+        if (lineIntersectsRect(e.x, e.y, player.x, player.y, walls[i])) {
+            wallBlocking = true;
+            break;
+        }
+    }
+
+    if (wallBlocking) {
+        e.reactionTimer = 0;
+        return;
+    }
+
+    // Clear line of sight
+    e.isSeeingPlayer = true;
+
+    if (e.reactionTimer < 1) {
+        e.reactionTimer = 1;
+    } else {
+        e.reactionTimer++;
+    }
+}
+// ====================== SHOOT FROM ANY ENEMY ======================
+function shootAtPlayerFromEnemy(e) {
+    createBullet(e.x, e.y, player.x, player.y, 7);
+    console.log("Enemy fired!");
+}
+
+// ====================== MULTI-ENEMY AI ======================
+function updateEnemies() {
+    for (let i = 0; i < enemies.length; i++) {
+        let e = enemies[i];
+
+        // Stuck logic
+        if (e.isStuck) {
+            e.stuckTimer--;
+            if (e.stuckTimer <= 0) e.isStuck = false;
+            e.color = (Math.floor(Date.now() / 120) % 2 === 0) ? "#ff0000" : "#ffaa00";
+            continue;
+        } else {
+            e.color = "#ff4444";
+        }
+
+        // Vision
+        checkVisionForEnemy(e);
+
+        // Shooting + Alert
+        if (e.isSeeingPlayer && e.reactionTimer >= e.reactionTime) {
+            if (e.state !== "alert") {
+                e.state = "alert";
+                e.alertTimer = 0;
+                console.log("🚨 ENEMY ALERTED - FIRING BURST");
+                shootAtPlayerFromEnemy(e);
+                shootAtPlayerFromEnemy(e);
+                shootAtPlayerFromEnemy(e);
+            }
+
+            e.lastKnownX = player.x;
+            e.lastKnownY = player.y;
+        } 
+        else if (!e.isSeeingPlayer && e.state === "alert") {
+            e.alertTimer++;
+            if (e.alertTimer > e.pauseTime) {
+                e.state = "return";
+                e.alertTimer = 0;
+            }
+        }
+
+        // Movement
+        if (e.state === "alert") {
+            moveToward(e, e.lastKnownX, e.lastKnownY, e.speed);
+            
+            // Occasional shots while chasing
+            if (e.isSeeingPlayer && Math.random() < 0.025) {
+                shootAtPlayerFromEnemy(e);
+            }
+        } 
+        else if (e.state === "return") {
+            moveToward(e, e.startX, e.startY, e.speed * 0.8);
+            
+            let dx = e.startX - e.x;
+            let dy = e.startY - e.y;
+            if (Math.sqrt(dx*dx + dy*dy) < 12) {
+                e.state = "patrol";
+                e.x = e.startX;
+                e.y = e.startY;
+            }
+        }
+    }
 }
