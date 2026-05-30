@@ -18,20 +18,36 @@ const tileSize = 40;
 const levelMap = [
     "000000000000000000000000000000",   // row 0
     "020000000000000000000000000003",   // row 1 - player and enemy
-    "000000000000000000000000000000",   // row 2
-    "001111111111111111110000000000",   // row 3
-    "001100000000000000110000000000",   // row 4 - wider corridors
-    "001100000000000000110000000000",   // row 5
-    "001111111111111111110000000000",   // row 6
-    "000000000000000000000000000000",   // row 7
-    "000011111111111111111111110000",   // row 8
-    "000000000000000000000000000000"    // row 9
+    "111111111111111000011111111111",   // row 2
+    "150000000000000000010000000000",   // row 3
+    "111111111111111000010301000000",   // row 4 - wider corridors
+    "401000000000001000010001111000",   // row 5
+    "101003000003001030010000001000",   // row 6
+    "101000010000001000010001111000",   // row 7
+    "100000000000000000000001000000",   // row 8
+    "100000000000000000000001000000",    // row 9
+    "111111111111111111111111000000",
+    "100000000000000000000000000000",
+    "100300000000111000001000001111",
+    "100000000000111000000000000111",
+    "100006000000111000300003000011",
+    "111111111111111000000000000011",
+    "170100000000111111110001111111",
+    "100100300000111000000000000000",
+    "100000003000010000011000300011",
+    "100100000000000030000000000011",
+    "100000100000010000000100100011",
+    "100100000000000000000000000090",
+    "111111111111111111111111111000", // LAST ROW
+
 ];
 
 // === CREATE LEVEL FROM ARRAY ===
 var walls = [];
 var enemies = [];
 var vent1, vent2;
+var vent3, vent4;
+var winGoal;
 
 player = new GameObject({ width: 20, height: 20, color: "#00ff88" });
 
@@ -57,32 +73,32 @@ for (let row = 0; row < levelMap.length; row++) {
             player.startX = x;
             player.startY = y;
         }
-else if (symbol === "3") {
-    let e = new GameObject({
-        x: x,
-        y: y,
-        width: 20,
-        height: 20,
-        color: "#ff4444"
-    });
+        else if (symbol === "3") {
+            let e = new GameObject({
+                x: x,
+                y: y,
+                width: 20,
+                height: 20,
+                color: "#ff4444"
+            });
 
-    e.startX = x;
-    e.startY = y;
-    e.lastKnownX = x;
-    e.lastKnownY = y;
-    e.speed = 2.5;
-    e.state = "patrol";
-    e.alertTimer = 0;
-    e.pauseTime = 200;
-    e.reactionTime = 30;        // fast for testing
-    e.reactionTimer = 0;
-    e.isStuck = false;
-    e.stuckTimer = 0;
-    e.visionLength = 500;
-    e.isSeeingPlayer = false;
+            e.startX = x;
+            e.startY = y;
+            e.lastKnownX = x;
+            e.lastKnownY = y;
+            e.speed = 2.5;
+            e.state = "patrol";
+            e.alertTimer = 0;
+            e.pauseTime = 200;
+            e.reactionTime = 30;
+            e.reactionTimer = 0;
+            e.isStuck = false;
+            e.stuckTimer = 0;
+            e.visionLength = 800;
+            e.isSeeingPlayer = false;
 
-    enemies.push(e);
-}
+            enemies.push(e);
+        }
         else if (symbol === "4") {
             vent1 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
             vent1.name = "ventA1";
@@ -91,6 +107,26 @@ else if (symbol === "3") {
             vent2 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
             vent2.name = "ventA2";
         }
+        else if (symbol === "6") {
+            vent3 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
+            vent3.name = "ventB1";
+        }
+        else if (symbol === "7") {
+            vent4 = new GameObject({ x: x, y: y, width: 30, height: 30, color: "#777777" });
+            vent4.name = "ventB2";
+        }
+
+        else if (symbol === "9") {
+            winGoal = new GameObject({
+                x: x,
+                y: y,
+                width: 60,
+                height: 60,
+                color: "#44ddff"   
+            });
+            winGoal.isGoal = true;
+        }
+
     }
 }
 
@@ -100,6 +136,10 @@ if (vent1 && vent2) {
     vent2.partner = vent1;
 }
 
+if (vent3 && vent4) {
+    vent3.partner = vent4;
+    vent4.partner = vent3;
+}
 //////////////
 
 var fX = .8;
@@ -135,6 +175,11 @@ function animate() {
         return;
     }
 
+    if (gameState === "win") {
+        drawWinScreen();
+        return;
+    }
+
     // --- MOVEMENT ---
     if (w) player.vy -= player.ay * player.force;
     if (s) player.vy += player.ay * player.force;
@@ -151,16 +196,16 @@ function animate() {
 
     /////Collisions------------------------------------------------
 
-// === COLLISION WITH ALL WALLS ===
-for (let i = 0; i < walls.length; i++) {
-    let wall = walls[i];
-    if (player.hitTestObject(wall)) {
-        player.x -= Math.sign(player.vx) * 4;
-        player.y -= Math.sign(player.vy) * 4;
-        player.vx = 0;
-        player.vy = 0;
+    // === COLLISION WITH ALL WALLS ===
+    for (let i = 0; i < walls.length; i++) {
+        let wall = walls[i];
+        if (player.hitTestObject(wall)) {
+            player.x -= Math.sign(player.vx) * 4;
+            player.y -= Math.sign(player.vy) * 4;
+            player.vx = 0;
+            player.vy = 0;
+        }
     }
-}
 
     //----------------------------------------------------------
 
@@ -183,10 +228,15 @@ for (let i = 0; i < walls.length; i++) {
         enemies[i].drawRect();
     }
 
+// === WIN CONDITION ===
+    if (winGoal && player.hitTestObject(winGoal)) {
+        gameState = "win";
+    }
+
     updateTraps();
     updateBullets();
 
-// 6. DRAW (only once each)
+    // 6. DRAW (only once each)
     // Draw all walls
     for (let i = 0; i < walls.length; i++) {
         walls[i].drawRect();
@@ -195,6 +245,8 @@ for (let i = 0; i < walls.length; i++) {
     // Draw vents
     if (vent1) drawVent(vent1);
     if (vent2) drawVent(vent2);
+    if (vent3) drawVent(vent3);
+    if (vent4) drawVent(vent4);
 
     drawTraps();
     drawExplosions();
@@ -203,78 +255,20 @@ for (let i = 0; i < walls.length; i++) {
     drawExclamation();      // exclamation marks above alert enemies
     drawBullets();
     drawLives();
+
+    // Draw win goal
+    if (winGoal) {
+        winGoal.drawRect();
+        
+        // "WIN" text on the goal
+        context.fillStyle = "#ffffff";
+        context.font = "bold 24px Arial";
+        context.textAlign = "center";
+        context.fillText("WIN", winGoal.x, winGoal.y + 8);
+    }
 }
 
-// ====================== VISION SYSTEM ======================
-
-// function checkVision() {
-//     enemy.isSeeingPlayer = false;
-
-//     var dx = player.x - enemy.x;
-//     var dy = player.y - enemy.y;
-//     var distance = Math.sqrt(dx * dx + dy * dy);
-
-//     if (distance > enemy.visionLength) {
-//         enemy.reactionTimer = 0;
-//         return;
-//     }
-
-//     // Wall blocking check with small buffer
-//     var wallBlocking = lineIntersectsRect(enemy.x, enemy.y, player.x, player.y, wall);
-
-//     if (wallBlocking) {
-//         // 
-//         // For this vertical wall, we check X position
-//         var enemySide;
-//         if (enemy.x < wall.x) {
-//             enemySide = "left";
-//         } else {
-//             enemySide = "right";
-//         }
-//         var playerSide;
-//         if (player.x < wall.x) {
-//             playerSide = "left"
-//         } else {
-//             playerSide = "right"
-//         }
-
-//         if (enemySide !== playerSide) {
-//             console.log("WALL BLOCKING - Player behind wall");
-//             enemy.reactionTimer = 0;
-//             return;
-//         }
-//     }
-
-//     // Clear line of sight
-//     enemy.isSeeingPlayer = true;
-
-//     if (enemy.reactionTimer < 1) {
-//         enemy.reactionTimer = 1;
-//     } else {
-//         enemy.reactionTimer++;
-//     }
-// }
-// function drawVisionLine() {
-//     // Draw the vision ray toward the player (for testing)
-//     var dx = player.x - enemy.x;
-//     var dy = player.y - enemy.y;
-//     var distance = Math.sqrt(dx * dx + dy * dy);
-
-//     if (distance > enemy.visionLength) return;
-
-//     // Step 3: Normalize the direction and extend it to visionLength
-//     var endX = enemy.x + (dx / distance) * enemy.visionLength;
-//     var endY = enemy.y + (dy / distance) * enemy.visionLength;
-
-//     context.save();
-//     context.strokeStyle = enemy.isSeeingPlayer ? "#ff0000" : "#ffff00"; // red = sees you!
-//     context.lineWidth = 3;
-//     context.beginPath();
-//     context.moveTo(enemy.x, enemy.y);
-//     context.lineTo(endX, endY);
-//     context.stroke();
-//     context.restore();
-// }
+// VISION SYSTEM =============================
 
 // Line vs rectangle intersection (good enough for one wall)
 function lineIntersectsRect(x1, y1, x2, y2, rect) {
@@ -300,75 +294,6 @@ function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
     return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
 }
 
-
-
-///-----------------ENEMY AI STUFF
-
-// function updateEnemy() {
-//     // ==================== STUCK LOGIC ====================
-//     if (enemy.isStuck) {
-//         enemy.stuckTimer--;
-//         if (enemy.stuckTimer <= 0) {
-//             enemy.isStuck = false;
-//             enemy.color = "#ff4444";
-//         }
-//         if (Math.floor(Date.now() / 120) % 2 === 0) {
-//             enemy.color = "#ff0000";
-//         } else {
-//             enemy.color = "#ffaa00";
-//         }
-//         return;
-//     } else {
-//         enemy.color = "#ff4444";
-//     }
-
-//     // ==================== VISION ALERT ====================
-//     if (enemy.isSeeingPlayer && enemy.reactionTimer >= enemy.reactionTime) {
-
-//         // Only trigger once when first entering alert
-//         if (enemy.state !== "alert") {
-//             enemy.state = "alert";
-//             enemy.alertTimer = 0;
-
-//             // === SHOOT FIRST (before moving) ===
-//             shootAtPlayer();           // First shot
-//             shootAtPlayer();
-//             shootAtPlayer();
-
-//         }
-
-//         enemy.lastKnownX = player.x;
-//         enemy.lastKnownY = player.y;
-//     }
-//     else if (!enemy.isSeeingPlayer && enemy.state === "alert") {
-//         enemy.alertTimer++;
-//         if (enemy.alertTimer > enemy.pauseTime) {
-//             enemy.state = "return";
-//             enemy.alertTimer = 0;
-//         }
-//     }
-
-//     // ==================== MOVEMENT ====================
-//     if (enemy.state === "alert") {
-//         moveToward(enemy, enemy.lastKnownX, enemy.lastKnownY, enemy.speed);
-
-//         // Optional: Shoot again occasionally while chasing
-//         if (enemy.isSeeingPlayer && Math.random() < 0.015) {
-//             shootAtPlayer();
-//         }
-//     }
-//     else if (enemy.state === "return") {
-//         moveToward(enemy, enemy.startX, enemy.startY, enemy.speed * 0.8);
-
-//         var dx = enemy.startX - enemy.x;
-//         var dy = enemy.startY - enemy.y;
-//         if (Math.sqrt(dx * dx + dy * dy) < 12) {
-//             enemy.state = "patrol";
-//             enemy.x = enemy.startX;
-//             enemy.y = enemy.startY;
-//         }
-//     }
-// }
 
 // Simple movement helper
 function moveToward(obj, targetX, targetY, speed) {
@@ -411,7 +336,7 @@ function updateTraps() {
 
             var tdx = e.x - trap.x;
             var tdy = e.y - trap.y;
-            var trapDistance = Math.sqrt(tdx*tdx + tdy*tdy);
+            var trapDistance = Math.sqrt(tdx * tdx + tdy * tdy);
 
             if (!e.isStuck && trapDistance < 35) {
                 e.isStuck = true;
@@ -429,7 +354,7 @@ function updateTraps() {
         if (e.isStuck) {
             var pdx = player.x - e.x;
             var pdy = player.y - e.y;
-            var killDistance = Math.sqrt(pdx*pdx + pdy*pdy);
+            var killDistance = Math.sqrt(pdx * pdx + pdy * pdy);
 
             if (killDistance < 45) {
                 console.log("Enemy eliminated!");
@@ -449,8 +374,8 @@ function drawTraps() {
         context.translate(t.x, t.y);
 
         // Draw a simple star shape
-        context.fillStyle = "#ff00ff";
-        context.strokeStyle = "#ffff00";
+        context.fillStyle = "#000000";
+        context.strokeStyle = "#14a857";
         context.lineWidth = 3;
 
         context.beginPath();
@@ -534,30 +459,31 @@ function updateBullets() {
         var b = bullets[i];
         if (!b.active) continue;
 
-        // Move bullet
         b.x += b.vx;
         b.y += b.vy;
 
-        // === NEW: Bullet collision with ANY wall ===
+        // === Forgiving wall collision ===
         var hitWall = false;
         for (var j = 0; j < walls.length; j++) {
-            if (lineIntersectsRect(b.x, b.y, b.x + b.vx, b.y + b.vy, walls[j])) {
+            // Only check if bullet is actually inside a wall (more reliable)
+            if (walls[j].hitTestPoint({x: b.x, y: b.y})) {
                 hitWall = true;
                 break;
             }
         }
+
         if (hitWall) {
             b.active = false;
+            continue;
         }
 
-        // Player hit detection
+        // Player hit
         var pdx = player.x - b.x;
         var pdy = player.y - b.y;
-        if (Math.sqrt(pdx * pdx + pdy * pdy) < 20) {
+        if (Math.sqrt(pdx*pdx + pdy*pdy) < 22) {
             console.log("Player hit by bullet!");
             b.active = false;
             player.lives--;
-
             if (player.lives > 0) {
                 player.x = player.startX;
                 player.y = player.startY;
@@ -568,17 +494,15 @@ function updateBullets() {
             }
         }
 
-        // Remove off-screen bullets
+        // Off-screen cleanup
         if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) {
             b.active = false;
         }
     }
 
-    // Clean up inactive bullets
+    // Cleanup
     for (var i = bullets.length - 1; i >= 0; i--) {
-        if (!bullets[i].active) {
-            bullets.splice(i, 1);
-        }
+        if (!bullets[i].active) bullets.splice(i, 1);
     }
 }
 
@@ -681,16 +605,13 @@ function checkVents() {
         return;
     }
 
-    // Safe checks so it doesn't crash when vents don't exist
-    if (vent1 && player.hitTestObject(vent1)) {
-        teleportPlayer(vent1.partner);
-        return;
-    }
+    // Pair A
+    if (vent1 && player.hitTestObject(vent1)) { teleportPlayer(vent1.partner); return; }
+    if (vent2 && player.hitTestObject(vent2)) { teleportPlayer(vent2.partner); return; }
 
-    if (vent2 && player.hitTestObject(vent2)) {
-        teleportPlayer(vent2.partner);
-        return;
-    }
+    // Pair B
+    if (vent3 && player.hitTestObject(vent3)) { teleportPlayer(vent3.partner); return; }
+    if (vent4 && player.hitTestObject(vent4)) { teleportPlayer(vent4.partner); return; }
 }
 
 function teleportPlayer(targetVent) {
@@ -731,7 +652,7 @@ function drawGameOver() {
 
 // Restart when pressing R
 document.addEventListener("keydown", function (e) {
-    if (gameState === "gameOver" && e.key.toLowerCase() === "r") {
+    if ((gameState === "gameOver" || gameState === "win") && e.key.toLowerCase() === "r") {
         restartGame();
     }
 });
@@ -774,13 +695,13 @@ function restartGame() {
 var mouseX = 0;
 var mouseY = 0;
 
-canvas.addEventListener("mousemove", function(e) {
+canvas.addEventListener("mousemove", function (e) {
     var rect = canvas.getBoundingClientRect();
     mouseX = e.clientX - rect.left;
     mouseY = e.clientY - rect.top;
 });
 
-canvas.addEventListener("click", function(e) {
+canvas.addEventListener("click", function (e) {
     if (gameState === "title") {
         if (isButtonClicked(200, 380, 600, 80)) {        // START
             gameState = "playing";
@@ -800,7 +721,7 @@ canvas.addEventListener("click", function(e) {
 
 function isButtonClicked(btnX, btnY, btnW, btnH) {
     return mouseX > btnX && mouseX < btnX + btnW &&
-           mouseY > btnY && mouseY < btnY + btnH;
+        mouseY > btnY && mouseY < btnY + btnH;
 }
 
 function drawTitleScreen() {
@@ -866,8 +787,8 @@ function drawInstructions() {
     var startY = 220;
     var lineHeight = 45;
 
-    context.fillText("W / A / S / D     Move",          250, startY);
-    context.fillText("SPACE             Drop Trap",      250, startY + lineHeight);
+    context.fillText("W / A / S / D     Move", 250, startY);
+    context.fillText("SPACE             Drop Trap", 250, startY + lineHeight);
     context.fillText("Walk into flashing enemy = Kill", 250, startY + lineHeight * 2);
     context.fillText("Step on grey vents to escape fast!", 250, startY + lineHeight * 3);
 
@@ -892,7 +813,7 @@ function drawExclamation() {
         context.font = "bold 42px Arial";
         context.textAlign = "center";
         context.textBaseline = "middle";
-        context.fillText("!", e.x, e.y - e.height/2 - 35);
+        context.fillText("!", e.x, e.y - e.height / 2 - 35);
         context.restore();
     }
 }
@@ -910,9 +831,9 @@ function checkVisionForEnemy(e) {
     }
 
     // === CLOSE-RANGE BYPASS ===
-    // If the player is very close, we assume clear line of sight
+    // If the player is very close, assume clear line of sight
     // (prevents false blocking when standing right next to the enemy)
-    if (distance < 80) {
+    if (distance < 120) {
         e.isSeeingPlayer = true;
         if (e.reactionTimer < 1) e.reactionTimer = 1;
         else e.reactionTimer++;
@@ -966,15 +887,18 @@ function updateEnemies() {
         // Vision
         checkVisionForEnemy(e);
 
-        // Shooting + Alert
+        // ==================== IMPROVED ALERT + SHOOTING ====================
         if (e.isSeeingPlayer && e.reactionTimer >= e.reactionTime) {
+            
+            // First time entering alert → guaranteed burst
             if (e.state !== "alert") {
                 e.state = "alert";
                 e.alertTimer = 0;
-                console.log("🚨 ENEMY ALERTED - FIRING BURST");
+                
+                console.log("🚨 ENEMY ALERTED - FIRING INITIAL BURST");
                 shootAtPlayerFromEnemy(e);
                 shootAtPlayerFromEnemy(e);
-                shootAtPlayerFromEnemy(e);
+                shootAtPlayerFromEnemy(e);   // 3-shot burst on detection
             }
 
             e.lastKnownX = player.x;
@@ -988,12 +912,12 @@ function updateEnemies() {
             }
         }
 
-        // Movement
+        // ==================== MOVEMENT + RELIABLE SHOOTING WHILE CHASING ====================
         if (e.state === "alert") {
             moveToward(e, e.lastKnownX, e.lastKnownY, e.speed);
-            
-            // Occasional shots while chasing
-            if (e.isSeeingPlayer && Math.random() < 0.025) {
+
+            // Much more reliable shooting while alert (even in tight spaces)
+            if (Math.random() < 0.06) {        // ≈ every 1 second on average
                 shootAtPlayerFromEnemy(e);
             }
         } 
@@ -1009,4 +933,23 @@ function updateEnemies() {
             }
         }
     }
+}
+
+function drawWinScreen() {
+    context.fillStyle = "rgba(0, 50, 0, 0.9)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+
+    context.fillStyle = "#00ff88";
+    context.font = "bold 90px Arial";
+    context.textAlign = "center";
+    context.fillText("MISSION COMPLETE", canvas.width/2, 280);
+
+    context.fillStyle = "#ffffff";
+    context.font = "bold 36px Arial";
+    context.fillText("You Escaped!", canvas.width/2, 380);
+
+    context.font = "24px Arial";
+    context.fillText("Press R to Play Again", canvas.width/2, 480);
+
+    context.textAlign = "left";
 }
